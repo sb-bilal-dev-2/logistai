@@ -1,6 +1,10 @@
+# Core runtime — everything needed to run the system fully offline.
+# No AI/API dependency: the matching agent uses the deterministic geo-ranker.
 SQLAlchemy>=2.0.30
 alembic>=1.13.0
 APScheduler>=3.10.4
 python-dotenv>=1.0.1
-anthropic>=0.40.0
 pytest>=8.0.0
+# PostgreSQL driver (ships binary wheels). SQLite needs no driver; this is only
+# used when DATABASE_URL points at Postgres, e.g. the docker postgres profile.
+psycopg[binary]>=3.1.0

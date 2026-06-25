@@ -1,0 +1,29 @@
+# Postgres variant (overlay on top of docker-compose.yml):
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up --build
+# Adds a Postgres service and points the app at it. No env vars needed.
+services:
+  app:
+    environment:
+      DATABASE_URL: postgresql+psycopg://logistai:logistai@db:5432/logistai
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: logistai
+      POSTGRES_PASSWORD: logistai
+      POSTGRES_DB: logistai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logistai -d logistai"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pg-data:

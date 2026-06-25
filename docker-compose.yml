@@ -1,0 +1,21 @@
+# Zero-config local run: `docker compose up --build`
+# Applies migrations, seeds trucks, then runs the live generate+match loop on a
+# persistent SQLite volume. No API key, no database setup required.
+services:
+  app:
+    build: .
+    environment:
+      DATABASE_URL: sqlite:////data/logistai.db
+      # Faster cadence so you see activity quickly when running locally.
+      REQUEST_MIN_INTERVAL_SECONDS: 5
+      REQUEST_MAX_INTERVAL_SECONDS: 15
+      # Optional Claude re-rank (off by default). To enable, also install the
+      # extra in the image and pass a key:
+      #   USE_LLM_RERANK: 1
+      #   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    volumes:
+      - logistai-data:/data
+    restart: unless-stopped
+
+volumes:
+  logistai-data:

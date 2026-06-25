@@ -48,17 +48,22 @@ built-in **Uzbekistan gazetteer**, then `haversine_km` measures distance.
 The agent sorts trucks closest-first, keeps those within
 `MATCH_MAX_DISTANCE_KM`, and records the top `MATCH_TOP_N`.
 
-**Optional LLM layer:** set `USE_LLM_RERANK=1` and `ANTHROPIC_API_KEY=…` to let
-Claude (`claude-opus-4-8`) re-rank the shortlist and add a one-line rationale.
-Without a key the deterministic geo-ranker runs alone — the system is fully
-functional offline.
+**Optional LLM layer:** install the extra (`pip install -r requirements-llm.txt`),
+then set `USE_LLM_RERANK=1` and `ANTHROPIC_API_KEY=…` to let Claude
+(`claude-opus-4-8`) re-rank the shortlist and add a one-line rationale. Without
+it the deterministic geo-ranker runs alone — the system is fully functional
+offline and the base install pulls no AI SDK.
 
 ---
 
 ## Quick start
 
+> **Runs fully offline — no Claude API required.** The base install pulls no
+> AI SDK; the matching agent uses the deterministic geo-ranker. The Claude
+> re-rank layer is strictly optional (see below).
+
 ```bash
-# 1. install
+# 1. install core deps (no API dependency)
 python -m pip install -r requirements.txt
 
 # 2. configure (optional — sensible SQLite defaults work out of the box)
@@ -80,6 +85,24 @@ Useful individual commands:
 python -m app.seed         # seed the truck fleet into malumotlar
 python -m app.analytics    # print agent performance summary
 ```
+
+### Run with Docker (no Python setup)
+
+The fastest way to run locally — Docker applies migrations automatically and
+starts the live loop on a persistent SQLite volume. No Python, no API key:
+
+```bash
+docker compose up --build
+```
+
+Use a real Postgres instead of SQLite (overlay file adds the DB and wires it up):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up --build
+```
+
+A `Makefile` wraps the common commands too: `make once`, `make test`,
+`make docker`, `make docker-postgres`, `make docker-down`.
 
 Example analytics output:
 

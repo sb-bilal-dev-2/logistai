@@ -1,0 +1,4 @@
+# OPTIONAL: only needed to enable the Claude re-rank layer (USE_LLM_RERANK=1).
+# The system runs fully without this — install only if you have an API key.
+-r requirements.txt
+anthropic>=0.40.0
