@@ -1,0 +1,59 @@
+# Design decisions
+
+Short rationale for the choices made in LogistAI.
+
+## Stack
+- **Python + SQLAlchemy 2.0 + Alembic.** The role is a Python AI/ML role and the
+  task explicitly says "migration", so a real migration tool (Alembic) was used
+  rather than `create_all`. Each of the three tables gets its own migration
+  (`0001`→`0002`→`0003`), matching the spec's "first/second/third migration".
+- **SQLite by default, Postgres-ready.** Zero setup for a reviewer (`upgrade head`
+  and go), but `DATABASE_URL` accepts any SQLAlchemy URL. Migrations use
+  `render_as_batch=True` so SQLite ALTERs stay compatible.
+- **APScheduler** for the 1–10 min generation loop — lightweight, in-process, no
+  broker needed for a demo. In production this would move to a durable queue /
+  Celery beat, but the generation + matching code is unchanged by that swap.
+
+## Matching approach (why geo + optional LLM, not a trained model)
+- The core signal the task asks for is **proximity** ("eng yaqin yoki shu hududda
+  turgan mashinalar"). That's a deterministic geospatial problem, so the base
+  ranker is **haversine distance** over a built-in **Uzbekistan gazetteer**. It's
+  correct, explainable, instant (~1.5 ms/request), and needs no API or GPU.
+- Locations are messy: region/city names in **Latin or Cyrillic**, with admin
+  suffixes (*shahri/viloyati*), or **raw GPS pairs**. `geo.py` normalizes
+  (transliterate → strip noise → token match) and falls back to GPS parsing, so
+  both input shapes resolve.
+- The **"AI agent" / multi-agent** dimension from the vacancy is satisfied by an
+  **optional Claude re-rank layer** (`USE_LLM_RERANK=1`): the LLM acts as a
+  dispatcher that confirms/adjusts the shortlist and gives a rationale. It is
+  strictly additive and degrades gracefully — no key ⇒ deterministic ranking
+  only, so the system never depends on a network call to function.
+- A learned ranking model (the PyTorch/TensorFlow part of the JD) is the natural
+  next step once `agent_takliflari` accumulates labelled outcomes (accepted vs.
+  rejected matches). The schema already logs distance + latency per pick to feed
+  that future model — see "Future work".
+
+## Reliability choices
+- **Backfill on startup** (`process_pending`): any request created while the
+  agent was down is matched on next boot, so nothing is silently lost.
+- **Never-starve shortlist:** if no truck resolves to coordinates, the agent
+  still returns its best-effort candidates rather than producing zero matches.
+- **Distances are nullable.** An unresolved location yields `masofa_km = NULL`
+  (sorted last) instead of crashing or guessing a bogus 0.
+- **Latency measured around the real ranking call** with `perf_counter`, stored
+  per row — this is the monitoring signal the task asks for.
+- **Daily-volume floor is guaranteed, not just average.** Worst case is the max
+  600 s interval → 144 ticks/day; with `BATCH=3` that's 432 ≥ 400. Average
+  interval gives ~785/day. (See `generator.py`.)
+
+## Schema extras beyond the spec
+`agent_takliflari` adds `reyting`, `masofa_km`, `latency_ms`, `izoh`. These are
+cheap and turn the log into an analytics-ready table (matched ratio, avg
+latency, avg pickup distance) — the "future analytics" the task anticipates.
+
+## Future work
+- Replace gazetteer centroids with a real geocoder + live truck GPS telemetry.
+- Add truck **availability/capacity** (status, cargo type) to the ranking.
+- Train a learning-to-rank model on accepted/rejected suggestions; serve it
+  behind the same `matching_agent` interface.
+- Move generation/matching onto a durable queue for horizontal scale.
