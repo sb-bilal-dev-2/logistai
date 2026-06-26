@@ -87,6 +87,43 @@ def test_max_distance_filter(session):
     assert min(logs, key=lambda l: l.reyting).masofa_km == pytest.approx(0.0, abs=1.0)
 
 
+def test_agent_applies_llm_rerank_when_enabled(session, monkeypatch):
+    from app.config import Settings
+
+    # Enable a (mocked) local-LLM provider and force a reversed ordering.
+    monkeypatch.setattr(matching_agent, "settings", Settings(llm_provider="ollama"))
+
+    def fake_rerank(place, cands):
+        ids = [c["mashina_id"] for c in cands]
+        return {"order": list(reversed(ids)), "rationale": "llm says so"}
+
+    monkeypatch.setattr(matching_agent, "llm_rerank", fake_rerank)
+
+    _add_trucks(session, ["Toshkent", "Samarqand", "Buxoro"])
+    z = _make_request(session, pickup="Toshkent")
+    logs = matching_agent.recommend_for_request(session, z)
+
+    # Geo order would be Toshkent(0km) first; the LLM reversed it, so the
+    # top-ranked log must NOT be the 0km truck, and rationale is recorded.
+    top = next(l for l in logs if l.reyting == 1)
+    assert top.masofa_km != 0.0
+    assert top.izoh == "llm says so"
+
+
+def test_geo_fallback_when_llm_returns_none(session, monkeypatch):
+    from app.config import Settings
+
+    monkeypatch.setattr(matching_agent, "settings", Settings(llm_provider="ollama"))
+    monkeypatch.setattr(matching_agent, "llm_rerank", lambda place, cands: None)
+
+    _add_trucks(session, ["Samarqand", "Toshkent", "Nukus"])
+    z = _make_request(session, pickup="Toshkent")
+    logs = matching_agent.recommend_for_request(session, z)
+    # LLM failed -> deterministic geo order stands (nearest first).
+    top = next(l for l in logs if l.reyting == 1)
+    assert top.masofa_km == pytest.approx(0.0, abs=1.0)
+
+
 def test_process_pending_is_idempotent(session):
     _add_trucks(session, ["Toshkent", "Samarqand"])
     _make_request(session)

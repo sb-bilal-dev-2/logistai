@@ -1,0 +1,31 @@
+# Local-LLM variant (overlay on top of docker-compose.yml):
+#   docker compose -f docker-compose.yml -f docker-compose.ollama.yml up --build
+#
+# Runs a local Ollama server in a container and points the agent's re-rank
+# layer at it — no external API. After the stack is up, pull a model once:
+#   docker compose -f docker-compose.yml -f docker-compose.ollama.yml exec ollama ollama pull llama3.2
+services:
+  app:
+    environment:
+      LLM_PROVIDER: ollama
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      LLM_TIMEOUT_SECONDS: 120
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  ollama-data:

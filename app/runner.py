@@ -46,7 +46,7 @@ def run_live() -> None:
     scheduler.start()
     print(
         f"[runner] live. interval {settings.request_min_interval_s}-"
-        f"{settings.request_max_interval_s}s, LLM rerank={'on' if settings.llm_enabled else 'off'}. "
+        f"{settings.request_max_interval_s}s, LLM rerank={settings.llm_label}. "
         "Ctrl+C to stop."
     )
 

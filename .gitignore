@@ -7,3 +7,4 @@ venv/
 *.sqlite3
 .pytest_cache/
 .claude/
+TEST_TASK.md

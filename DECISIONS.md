@@ -23,11 +23,18 @@ Short rationale for the choices made in LogistAI.
   suffixes (*shahri/viloyati*), or **raw GPS pairs**. `geo.py` normalizes
   (transliterate → strip noise → token match) and falls back to GPS parsing, so
   both input shapes resolve.
-- The **"AI agent" / multi-agent** dimension from the vacancy is satisfied by an
-  **optional Claude re-rank layer** (`USE_LLM_RERANK=1`): the LLM acts as a
+- The **"AI agent" / Generative-AI** dimension from the vacancy is satisfied by
+  an **optional LLM re-rank layer** (`LLM_PROVIDER`): the LLM acts as a
   dispatcher that confirms/adjusts the shortlist and gives a rationale. It is
-  strictly additive and degrades gracefully — no key ⇒ deterministic ranking
-  only, so the system never depends on a network call to function.
+  strictly additive and degrades gracefully — if the LLM is unavailable or
+  returns bad output, the deterministic geo order stands, so the system never
+  depends on it to function.
+- **The LLM can be fully local.** `LLM_PROVIDER=ollama` talks to an
+  [Ollama](https://ollama.com) server on `localhost` (called via stdlib HTTP —
+  zero added pip deps), so the "AI agent uses a generative model" story holds
+  with **no external API and nothing leaving the machine**. `claude` remains as
+  a cloud option for anyone who wants it. This directly demonstrates the JD's
+  "deploy AI/ML models in production" without a vendor lock-in.
 - A learned ranking model (the PyTorch/TensorFlow part of the JD) is the natural
   next step once `agent_takliflari` accumulates labelled outcomes (accepted vs.
   rejected matches). The schema already logs distance + latency per pick to feed

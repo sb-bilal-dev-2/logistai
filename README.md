@@ -6,6 +6,63 @@ loading point — logging which truck it picked and how long it took to decide.
 
 This implements the EGS GROUP test task (`TEST_TASK.md`).
 
+> **Runs 100% offline by default — no API key, no Claude, no OpenAI.** Matching
+> is pure local geo-ranking. An optional LLM re-rank layer can run on a **local**
+> model (Ollama) — still no external API. See *Optional LLM re-rank layer* below.
+
+---
+
+## 🚀 Quick start
+
+Pick **one** of the two options below.
+
+### Option A — Docker (no Python needed)
+
+```bash
+docker compose up --build
+```
+
+That's it. Migrations run automatically, trucks are seeded, and the live
+generate-and-match loop starts. Stop with `Ctrl+C`.
+
+### Option B — Python
+
+```bash
+pip install -r requirements.txt     # 1. install
+python -m alembic upgrade head       # 2. create the database
+python -m app.runner                 # 3. run (Ctrl+C to stop)
+```
+
+Want a quick result instead of the live loop? Run one tick and see the numbers:
+
+```bash
+python -m app.runner --once
+```
+
+You should see something like:
+
+```
+[seed] inserted 120 trucks into malumotlar
+[once] created+matched requests: [1, 2, 3]
+=== LogistAI agent analytics ===
+  zaproslar               : 3
+  malumotlar              : 120
+  takliflar_log           : 9
+  matched_requests        : 3
+  avg_latency_ms          : 1.31
+```
+
+### Handy commands
+
+```bash
+python -m app.analytics    # print agent performance summary anytime
+python -m pytest           # run the 39 tests
+```
+
+> **Tip:** requests default to a 1–10 min interval (per the task). To watch
+> activity right away, lower it in `.env`:
+> `REQUEST_MIN_INTERVAL_SECONDS=3` and `REQUEST_MAX_INTERVAL_SECONDS=5`.
+
 ---
 
 ## What it does
@@ -48,74 +105,50 @@ built-in **Uzbekistan gazetteer**, then `haversine_km` measures distance.
 The agent sorts trucks closest-first, keeps those within
 `MATCH_MAX_DISTANCE_KM`, and records the top `MATCH_TOP_N`.
 
-**Optional LLM layer:** install the extra (`pip install -r requirements-llm.txt`),
-then set `USE_LLM_RERANK=1` and `ANTHROPIC_API_KEY=…` to let Claude
-(`claude-opus-4-8`) re-rank the shortlist and add a one-line rationale. Without
-it the deterministic geo-ranker runs alone — the system is fully functional
-offline and the base install pulls no AI SDK.
+### Optional LLM re-rank layer
 
----
+The geo-ranker is the deterministic core. On top of it you can optionally enable
+an LLM to re-rank the shortlist and add a one-line rationale, via `LLM_PROVIDER`:
 
-## Quick start
+| `LLM_PROVIDER` | Backend | Network | Setup |
+|----------------|---------|---------|-------|
+| `none` *(default)* | geo-ranking only | **offline** | nothing |
+| `ollama` | **local LLM** (Ollama) | **offline** | install Ollama + pull a model |
+| `claude` | Anthropic Claude | cloud API | `pip install -r requirements-llm.txt` + key |
 
-> **Runs fully offline — no Claude API required.** The base install pulls no
-> AI SDK; the matching agent uses the deterministic geo-ranker. The Claude
-> re-rank layer is strictly optional (see below).
+Whatever the provider, the call is best-effort: if the LLM is unavailable or
+returns bad output, the agent silently keeps the geo order — it never depends on
+the LLM to function.
+
+**Local LLM (recommended offline option) — no API key, nothing leaves your machine:**
 
 ```bash
-# 1. install core deps (no API dependency)
-python -m pip install -r requirements.txt
+# 1. install Ollama from https://ollama.com, then pull a small model
+ollama pull llama3.2
 
-# 2. configure (optional — sensible SQLite defaults work out of the box)
-cp .env.example .env
-
-# 3. create the schema (runs all 3 migrations)
-python -m alembic upgrade head
-
-# 4a. one tick: seed trucks, create requests, match them, print analytics
-python -m app.runner --once
-
-# 4b. or run the live system (Ctrl+C to stop)
+# 2. point the agent at it
+#    in .env:  LLM_PROVIDER=ollama   (OLLAMA_MODEL defaults to llama3.2)
 python -m app.runner
 ```
 
-Useful individual commands:
+Or run the whole thing — app **and** a local Ollama server — in Docker:
 
 ```bash
-python -m app.seed         # seed the truck fleet into malumotlar
-python -m app.analytics    # print agent performance summary
+docker compose -f docker-compose.yml -f docker-compose.ollama.yml up --build
+# then pull the model once into the ollama container:
+docker compose -f docker-compose.yml -f docker-compose.ollama.yml exec ollama ollama pull llama3.2
 ```
 
-### Run with Docker (no Python setup)
+## Run on Postgres (optional)
 
-The fastest way to run locally — Docker applies migrations automatically and
-starts the live loop on a persistent SQLite volume. No Python, no API key:
-
-```bash
-docker compose up --build
-```
-
-Use a real Postgres instead of SQLite (overlay file adds the DB and wires it up):
+SQLite is the zero-config default. To use a real Postgres via Docker (the
+overlay adds the DB and wires it up — no env vars needed):
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.postgres.yml up --build
 ```
 
-A `Makefile` wraps the common commands too: `make once`, `make test`,
-`make docker`, `make docker-postgres`, `make docker-down`.
-
-Example analytics output:
-
-```
-=== LogistAI agent analytics ===
-  zaproslar               : 524
-  malumotlar              : 120
-  takliflar_log           : 1572
-  matched_requests        : 524
-  unmatched_requests      : 0
-  avg_latency_ms          : 1.49
-  avg_top1_distance_km    : 38.2
-```
+Or point at any database yourself with `DATABASE_URL` in `.env`.
 
 ## Tests
 
@@ -131,6 +164,8 @@ behind the design.
 
 ## Configuration (`.env`)
 
+Copy `.env.example` to `.env` to override any default (all are optional):
+
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `DATABASE_URL` | `sqlite:///logistai.db` | any SQLAlchemy URL (Postgres-ready) |
@@ -138,7 +173,12 @@ behind the design.
 | `MATCH_TOP_N` | `3` | recommendations logged per request |
 | `MATCH_MAX_DISTANCE_KM` | `600` | max pickup distance considered |
 | `SEED_TRUCK_COUNT` | `120` | fleet size seeded if `malumotlar` is empty |
-| `USE_LLM_RERANK` / `ANTHROPIC_API_KEY` | `0` / — | enable the Claude re-rank layer |
+| `LLM_PROVIDER` | `none` | re-rank backend: `none` / `ollama` (local) / `claude` (cloud) |
+| `OLLAMA_HOST` / `OLLAMA_MODEL` | `localhost:11434` / `llama3.2` | local LLM server + model |
+| `ANTHROPIC_API_KEY` / `LLM_MODEL` | — / `claude-opus-4-8` | only used when `LLM_PROVIDER=claude` |
+
+A `Makefile` also wraps the common commands: `make once`, `make test`,
+`make docker`, `make docker-postgres`, `make docker-down`.
 
 ## Project layout
 
