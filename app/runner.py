@@ -8,47 +8,123 @@ from __future__ import annotations
 
 import argparse
 import random
+import re
 import signal
 import sys
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy import func, select
 
+from app import __version__
 from app.analytics import print_summary
 from app.config import settings
-from app.database import get_session
-from app.generator import generate_once, next_interval_seconds
+from app.database import engine, get_session
+from app.generator import BATCH, generate_once, next_interval_seconds
 from app.matching_agent import process_pending
+from app.models import AgentTaklifi, Malumot, Zapros
 from app.seed import seed_trucks
 
 
+def _redact_url(url: str) -> str:
+    """Show host/db without leaking any password in the connection string."""
+    url = re.sub(r"://([^:/@]+):([^@]+)@", r"://\1:***@", url)
+    if url.startswith("sqlite"):
+        return url.split("///")[-1] or url  # just the file path
+    return url
+
+
+def _estimated_daily_requests() -> int:
+    avg_interval = (settings.request_min_interval_s + settings.request_max_interval_s) / 2
+    if avg_interval <= 0:
+        return 0
+    return round(86_400 / avg_interval * BATCH)
+
+
+def _startup_banner() -> None:
+    with get_session() as s:
+        n_zap = s.execute(select(func.count(Zapros.id))).scalar_one()
+        n_mal = s.execute(select(func.count(Malumot.id))).scalar_one()
+        n_tak = s.execute(select(func.count(AgentTaklifi.id))).scalar_one()
+
+    line = "=" * 64
+    print(line)
+    print(f" LogistAI runner v{__version__}")
+    print(line)
+    print(f" Database     : {engine.dialect.name}  ->  {_redact_url(settings.database_url)}")
+    print(f" Tables       : zaproslar={n_zap}  malumotlar={n_mal}  agent_takliflari={n_tak}")
+    print(
+        f" Generator    : every {settings.request_min_interval_s}-"
+        f"{settings.request_max_interval_s}s, batch={BATCH}  "
+        f"(~{_estimated_daily_requests()} requests/day, floor 400)"
+    )
+    print(
+        f" Matching     : geo haversine, top-{settings.match_top_n}, "
+        f"<= {settings.match_max_distance_km:.0f} km"
+    )
+    print(f" LLM re-rank  : {settings.llm_label}")
+    print(line)
+
+
 def _bootstrap() -> None:
+    """Ensure a fleet exists and nothing is left unmatched, with clear logs."""
     inserted = seed_trucks()
     if inserted:
         print(f"[seed] inserted {inserted} trucks into malumotlar")
+    else:
+        with get_session() as s:
+            have = s.execute(select(func.count(Malumot.id))).scalar_one()
+        print(f"[seed] fleet already present: {have} trucks (skipped seeding)")
+
     with get_session() as session:
         done = process_pending(session)
         if done:
-            print(f"[backfill] matched {done} previously-unmatched requests")
+            print(f"[backfill] matched {done} previously-unmatched request(s) on startup")
+        else:
+            print("[backfill] no pending requests - all caught up")
+
+
+def _describe_matches(ids: list[int]) -> None:
+    """Log, per created request, the pickup and the agent's top pick."""
+    if not ids:
+        return
+    with get_session() as s:
+        for zid in ids:
+            z = s.get(Zapros, zid)
+            top = s.execute(
+                select(AgentTaklifi)
+                .where(AgentTaklifi.zapros_id == zid, AgentTaklifi.reyting == 1)
+            ).scalars().first()
+            if top is None:
+                print(f"  zapros #{zid:<4} {z.yuk_ortish_joyi:>12} -> (no truck matched)")
+                continue
+            truck = s.get(Malumot, top.mashina_id)
+            dist = f"{top.masofa_km:.0f} km" if top.masofa_km is not None else "n/a"
+            print(
+                f"  zapros #{zid:<4} {z.yuk_ortish_joyi:>12}  ->  "
+                f"{truck.mashina_raqami:<11} @ {truck.joriy_lokatsiya:<16} "
+                f"({dist}, {top.latency_ms:.0f} ms)"
+            )
 
 
 def run_live() -> None:
+    _startup_banner()
     _bootstrap()
     rng = random.Random()
     scheduler = BackgroundScheduler(timezone="UTC")
 
     def tick() -> None:
         ids = generate_once(rng, run_agent=True)
-        print(f"[tick] created+matched requests: {ids}")
+        print(f"[tick] created + matched {len(ids)} request(s): {ids}")
+        _describe_matches(ids)
         # Reschedule with a fresh random 1-10 min gap.
-        scheduler.reschedule_job("gen", trigger="interval", seconds=next_interval_seconds(rng))
+        nxt = next_interval_seconds(rng)
+        scheduler.reschedule_job("gen", trigger="interval", seconds=nxt)
+        print(f"[tick] next batch in {nxt}s")
 
-    scheduler.add_job(tick, "interval", seconds=next_interval_seconds(rng), id="gen")
+    first = next_interval_seconds(rng)
+    scheduler.add_job(tick, "interval", seconds=first, id="gen")
     scheduler.start()
-    print(
-        f"[runner] live. interval {settings.request_min_interval_s}-"
-        f"{settings.request_max_interval_s}s, LLM rerank={settings.llm_label}. "
-        "Ctrl+C to stop."
-    )
+    print(f"[runner] live - first batch in {first}s. Ctrl+C to stop.")
 
     def shutdown(*_):  # noqa: ANN001
         print("\n[runner] shutting down...")
@@ -74,9 +150,11 @@ def _busy_wait() -> None:
 
 
 def run_once() -> None:
+    _startup_banner()
     _bootstrap()
     ids = generate_once(random.Random(), run_agent=True)
-    print(f"[once] created+matched requests: {ids}")
+    print(f"[once] created + matched {len(ids)} request(s): {ids}")
+    _describe_matches(ids)
     print_summary()
 
 
