@@ -106,10 +106,15 @@ def _describe_matches(ids: list[int]) -> None:
                 continue
             truck = s.get(Malumot, top.mashina_id)
             dist = f"{top.masofa_km:.0f} km" if top.masofa_km is not None else "n/a"
+            # Show whether the LLM re-ranked this match or it used geo order.
+            # (izoh is only set when the LLM returned a result; absent => fallback.)
+            source = ""
+            if settings.llm_enabled:
+                source = " via LLM" if top.izoh else " via geo (LLM fallback)"
             print(
                 f"  zapros #{zid:<4} {z.yuk_ortish_joyi:>12}  ->  "
                 f"{truck.mashina_raqami:<11} @ {truck.joriy_lokatsiya:<16} "
-                f"({dist}, {top.latency_ms:.0f} ms)"
+                f"({dist}, {top.latency_ms:.0f} ms){source}"
             )
 
 
