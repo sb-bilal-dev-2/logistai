@@ -10,8 +10,8 @@ help:
 	@echo "analytics       print agent performance summary"
 	@echo "docker          docker compose up (SQLite, zero config)"
 	@echo "docker-postgres docker compose up with Postgres"
-	@echo "docker-ollama   docker compose up with a local LLM (Ollama)"
-	@echo "ollama-pull     pull the local LLM model into the ollama container"
+	@echo "docker-ollama   docker compose up with a local LLM (Ollama, auto-pulls model)"
+	@echo "ollama-pull     manually (re)pull a model into the ollama container"
 	@echo "docker-down     stop + remove docker stack"
 
 install:
@@ -45,7 +45,7 @@ docker-ollama:
 	docker compose -f docker-compose.yml -f docker-compose.ollama.yml up --build
 
 ollama-pull:
-	docker compose -f docker-compose.yml -f docker-compose.ollama.yml exec ollama ollama pull $(or $(OLLAMA_MODEL),llama3.2)
+	docker compose -f docker-compose.yml -f docker-compose.ollama.yml exec ollama ollama pull $(or $(OLLAMA_MODEL),qwen2.5:0.5b)
 
 docker-down:
 	docker compose -f docker-compose.yml -f docker-compose.postgres.yml -f docker-compose.ollama.yml down -v

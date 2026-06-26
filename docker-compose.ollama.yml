@@ -1,20 +1,24 @@
-# Local-LLM variant (overlay on top of docker-compose.yml):
+# Local-LLM variant (overlay on top of docker-compose.yml). ONE command:
+#
 #   docker compose -f docker-compose.yml -f docker-compose.ollama.yml up --build
 #
-# Runs a local Ollama server in a container and points the agent's re-rank
-# layer at it — no external API. After the stack is up, pull a model once:
-#   docker compose -f docker-compose.yml -f docker-compose.ollama.yml exec ollama ollama pull llama3.2
+# This starts a local Ollama server, AUTO-PULLS the model (no manual step), then
+# runs the agent with its re-rank layer pointed at the local model. No external
+# API, no API key. Override the model with OLLAMA_MODEL=... in your environment.
 services:
   app:
     environment:
       LLM_PROVIDER: ollama
       OLLAMA_HOST: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:0.5b}
       LLM_TIMEOUT_SECONDS: 120
     depends_on:
       ollama:
         condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully  # wait until the model exists
 
+  # The local LLM server.
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -23,9 +27,21 @@ services:
       - ollama-data:/root/.ollama
     healthcheck:
       test: ["CMD", "ollama", "list"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 12
+      retries: 24
+
+  # One-shot: pulls the model into the shared volume, then exits. Subsequent
+  # runs are instant because the model is already cached in `ollama-data`.
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["sh", "-c", "ollama pull ${OLLAMA_MODEL:-qwen2.5:0.5b}"]
+    restart: "no"
 
 volumes:
   ollama-data:

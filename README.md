@@ -120,24 +120,34 @@ Whatever the provider, the call is best-effort: if the LLM is unavailable or
 returns bad output, the agent silently keeps the geo order — it never depends on
 the LLM to function.
 
-**Local LLM (recommended offline option) — no API key, nothing leaves your machine:**
+**Local LLM — no API key, nothing leaves your machine.** Two ways:
 
-```bash
-# 1. install Ollama from https://ollama.com, then pull a small model
-ollama pull llama3.2
-
-# 2. point the agent at it
-#    in .env:  LLM_PROVIDER=ollama   (OLLAMA_MODEL defaults to llama3.2)
-python -m app.runner
-```
-
-Or run the whole thing — app **and** a local Ollama server — in Docker:
+**Easiest — Docker, one command (auto-installs the server *and* the model):**
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.ollama.yml up --build
-# then pull the model once into the ollama container:
-docker compose -f docker-compose.yml -f docker-compose.ollama.yml exec ollama ollama pull llama3.2
 ```
+
+That starts a local Ollama server, pulls the model automatically (defaults to the
+tiny `qwen2.5:0.5b`), and runs the agent against it. First run downloads the
+model; later runs are instant (it's cached in a volume). Pick another model with
+`OLLAMA_MODEL=llama3.2:3b docker compose -f … up`.
+
+**Without Docker (run Ollama on your host):**
+
+```bash
+# 1. install Ollama from https://ollama.com  (one-click installer)
+# 2. pull a small model
+ollama pull qwen2.5:0.5b
+# 3. point the agent at it (in .env:  LLM_PROVIDER=ollama)
+LLM_PROVIDER=ollama OLLAMA_MODEL=qwen2.5:0.5b python -m app.runner
+```
+
+> **Note on tiny models:** `qwen2.5:0.5b` is great for a fast demo, but it's too
+> small to reason reliably about distances — it may re-order trucks worse than
+> plain geo-ranking. That's fine: the agent always falls back to the correct geo
+> order if the LLM is unavailable, and the LLM's value here is the human-readable
+> *rationale*. For trustworthy re-ranking use a larger model (`llama3.2:3b`+).
 
 ## Run on Postgres (optional)
 
