@@ -121,8 +121,15 @@ def recommend_for_request(session: Session, zapros: Zapros) -> list[AgentTaklifi
 def process_pending(session: Session, limit: int = 500) -> int:
     """Find requests that have no recommendation yet and process them.
 
-    Returns the number of requests processed. This makes the agent robust to
-    restarts: anything created while the agent was down still gets matched.
+    This is the agent's *watcher* path: it matches any request that wasn't
+    matched synchronously at creation — e.g. created out-of-band by another
+    service, or inserted while the agent was down. Called once on startup
+    (backfill) and then continuously by the background watcher.
+
+    Rows are claimed with ``FOR UPDATE SKIP LOCKED`` so multiple agent workers
+    can share one backlog without double-matching the same request. On
+    PostgreSQL this is real row-level locking; on SQLite (no row locks) the
+    clause is simply not emitted, which is fine for a single worker.
     """
     already = select(AgentTaklifi.zapros_id).distinct().subquery()
     pending = list(
@@ -131,6 +138,7 @@ def process_pending(session: Session, limit: int = 500) -> int:
             .where(Zapros.id.not_in(select(already.c.zapros_id)))
             .order_by(Zapros.id)
             .limit(limit)
+            .with_for_update(skip_locked=True)
         ).scalars()
     )
     for zapros in pending:

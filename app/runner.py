@@ -61,7 +61,14 @@ def _startup_banner() -> None:
         f" Matching     : geo haversine, top-{settings.match_top_n}, "
         f"<= {settings.match_max_distance_km:.0f} km"
     )
-    print(f" LLM re-rank  : {settings.llm_label}")
+    watcher = f"every {settings.watch_interval_s}s" if settings.watch_interval_s > 0 else "disabled"
+    print(f" Watcher      : {watcher} (matches externally-created requests)")
+    llm_line = settings.llm_label
+    if settings.llm_provider == "ollama":
+        from app.llm import ollama_reachable
+
+        llm_line += "  [reachable]" if ollama_reachable() else "  [unreachable -> geo fallback]"
+    print(f" LLM re-rank  : {llm_line}")
     print(line)
 
 
@@ -121,8 +128,20 @@ def run_live() -> None:
         scheduler.reschedule_job("gen", trigger="interval", seconds=nxt)
         print(f"[tick] next batch in {nxt}s")
 
+    def watch() -> None:
+        # Catch any request created out-of-band (not by our generator) and
+        # match it in near-real-time, not just on startup.
+        with get_session() as s:
+            n = process_pending(s)
+        if n:
+            print(f"[watch] matched {n} externally-created request(s)")
+
     first = next_interval_seconds(rng)
     scheduler.add_job(tick, "interval", seconds=first, id="gen")
+    if settings.watch_interval_s > 0:
+        scheduler.add_job(
+            watch, "interval", seconds=settings.watch_interval_s, id="watch"
+        )
     scheduler.start()
     print(f"[runner] live - first batch in {first}s. Ctrl+C to stop.")
 

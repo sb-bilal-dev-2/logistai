@@ -68,6 +68,18 @@ def llm_rerank(loading_place: str, candidates: list[dict]) -> Optional[dict]:
     return None
 
 
+def ollama_reachable() -> bool:
+    """Quick check whether the local Ollama server is up (for banners/warnings)."""
+    if settings.llm_provider != "ollama":
+        return False
+    try:
+        url = settings.ollama_host.rstrip("/") + "/api/tags"
+        with urllib.request.urlopen(url, timeout=2) as resp:
+            return 200 <= resp.status < 300
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return False
+
+
 def _rerank_ollama(loading_place: str, candidates: list[dict]) -> Optional[dict]:
     """Call a locally-running Ollama server (stdlib HTTP, no extra deps)."""
     url = settings.ollama_host.rstrip("/") + "/api/chat"

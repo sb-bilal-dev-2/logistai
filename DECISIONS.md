@@ -40,6 +40,26 @@ Short rationale for the choices made in LogistAI.
   rejected matches). The schema already logs distance + latency per pick to feed
   that future model — see "Future work".
 
+## Watching for new requests (hybrid)
+The agent matches each request **synchronously the moment it's generated** (lowest
+latency, most faithful to *"zapros yaratilgan zahoti"*). On top of that a
+**continuous watcher** (`process_pending`, every `WATCH_INTERVAL_SECONDS`) scans
+for any request created **out-of-band** — by another service, or while the agent
+was down — and matches it in near-real-time. Pending rows are claimed with
+`FOR UPDATE SKIP LOCKED`, so multiple agent workers can share one backlog without
+double-matching (real row locks on PostgreSQL; a harmless no-op on SQLite). This
+gives the simplicity/latency of synchronous matching **and** the
+decoupled/production behaviour of a queue consumer.
+
+## LLM re-rank on by default (local)
+`LLM_PROVIDER` defaults to `ollama` — the re-rank layer is **on**, using a local
+model, so the "AI agent" genuinely reasons over candidates out of the box while
+staying offline. It degrades gracefully: if the Ollama server isn't running the
+agent falls back to the deterministic geo order (the startup banner shows
+`[reachable]` / `[unreachable -> geo fallback]`). Set `LLM_PROVIDER=none` for
+pure geo-ranking. Note the cost: a CPU LLM adds ~1–6 s/request of latency, which
+is fine at the spec's 1–10 min cadence; for latency-critical use, `none` is best.
+
 ## Reliability choices
 - **Backfill on startup** (`process_pending`): any request created while the
   agent was down is matched on next boot, so nothing is silently lost.

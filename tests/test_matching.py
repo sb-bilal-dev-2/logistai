@@ -135,3 +135,26 @@ def test_process_pending_is_idempotent(session):
     # Exactly the two requests are matched, no duplicates.
     distinct = {l.zapros_id for l in session.query(AgentTaklifi).all()}
     assert len(distinct) == 2
+
+
+def test_watcher_matches_externally_inserted_request(session):
+    # Simulate a request created out-of-band (e.g. by another service): a raw
+    # insert with NO synchronous matching. The watcher (process_pending) must
+    # pick it up. This also exercises the FOR UPDATE SKIP LOCKED claim path.
+    _add_trucks(session, ["Toshkent", "Samarqand", "Nukus"])
+    external = Zapros(
+        yuk_ortish_joyi="Samarqand",
+        yuk_tushirish_joyi="Toshkent",
+        yuklash_sanasi=datetime.now(timezone.utc),
+    )
+    session.add(external)
+    session.commit()
+    assert session.query(AgentTaklifi).filter_by(zapros_id=external.id).count() == 0
+
+    n = matching_agent.process_pending(session)
+    assert n == 1
+    top = session.query(AgentTaklifi).filter_by(
+        zapros_id=external.id, reyting=1
+    ).one()
+    # Closest truck to Samarqand pickup is the Samarqand one (0 km).
+    assert top.masofa_km == pytest.approx(0.0, abs=1.0)

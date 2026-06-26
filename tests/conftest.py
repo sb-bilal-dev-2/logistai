@@ -18,7 +18,10 @@ if _TMP_DB.exists():
     _TMP_DB.unlink()
 os.environ["DATABASE_URL"] = f"sqlite:///{_TMP_DB.as_posix()}"
 os.environ.setdefault("SEED_TRUCK_COUNT", "30")
-os.environ.setdefault("USE_LLM_RERANK", "0")
+# Tests run deterministically offline: no LLM calls unless a test explicitly
+# opts in by overriding settings. (The app default is LLM_PROVIDER=ollama.)
+os.environ["LLM_PROVIDER"] = "none"
+os.environ.pop("USE_LLM_RERANK", None)
 
 from sqlalchemy import event, inspect  # noqa: E402
 

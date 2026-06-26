@@ -40,7 +40,10 @@ def _provider() -> str:
     # Backward compatibility: USE_LLM_RERANK=1 historically meant "use Claude".
     if _bool("USE_LLM_RERANK", False):
         return "claude"
-    return "none"
+    # Default ON: re-rank via a local Ollama model (offline, no external API).
+    # If the Ollama server isn't running, the agent transparently falls back to
+    # the deterministic geo order, so this default never breaks a run.
+    return "ollama"
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,10 @@ class Settings:
 
     match_top_n: int = _int("MATCH_TOP_N", 3)
     match_max_distance_km: float = float(_int("MATCH_MAX_DISTANCE_KM", 600))
+
+    # How often the background watcher scans for unmatched requests (i.e. ones
+    # created out-of-band, not by the in-process generator). 0 disables it.
+    watch_interval_s: int = _int("WATCH_INTERVAL_SECONDS", 10)
 
     # --- re-rank LLM layer (optional, off by default) ---
     llm_provider: str = _provider()

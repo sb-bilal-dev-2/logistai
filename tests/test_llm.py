@@ -14,12 +14,13 @@ from app.config import Settings
 
 
 # --- provider resolution -----------------------------------------------------
-def test_default_provider_is_none(monkeypatch):
+def test_default_provider_is_ollama(monkeypatch):
+    # With nothing set, the app defaults to the local Ollama re-rank layer.
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
     monkeypatch.delenv("USE_LLM_RERANK", raising=False)
     from app.config import _provider
 
-    assert _provider() == "none"
+    assert _provider() == "ollama"
 
 
 def test_provider_env_selects_ollama(monkeypatch):

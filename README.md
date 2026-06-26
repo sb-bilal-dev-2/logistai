@@ -6,9 +6,10 @@ loading point — logging which truck it picked and how long it took to decide.
 
 This implements the EGS GROUP test task (`TEST_TASK.md`).
 
-> **Runs 100% offline by default — no API key, no Claude, no OpenAI.** Matching
-> is pure local geo-ranking. An optional LLM re-rank layer can run on a **local**
-> model (Ollama) — still no external API. See *Optional LLM re-rank layer* below.
+> **Runs 100% offline — no external API, no Claude, no OpenAI.** Matching uses
+> local geo-ranking; an LLM re-rank layer is **on by default** using a **local**
+> Ollama model (still offline). If Ollama isn't running it transparently falls
+> back to geo order, so a fresh run never breaks. See *LLM re-rank layer* below.
 
 ---
 
@@ -130,8 +131,8 @@ an LLM to re-rank the shortlist and add a one-line rationale, via `LLM_PROVIDER`
 
 | `LLM_PROVIDER` | Backend | Network | Setup |
 |----------------|---------|---------|-------|
-| `none` *(default)* | geo-ranking only | **offline** | nothing |
-| `ollama` | **local LLM** (Ollama) | **offline** | install Ollama + pull a model |
+| `ollama` *(default)* | **local LLM** (Ollama) | **offline** | install Ollama + pull a model (else auto-falls back to geo) |
+| `none` | geo-ranking only | **offline** | nothing |
 | `claude` | Anthropic Claude | cloud API | `pip install -r requirements-llm.txt` + key |
 
 Whatever the provider, the call is best-effort: if the LLM is unavailable or
@@ -201,7 +202,8 @@ Copy `.env.example` to `.env` to override any default (all are optional):
 | `MATCH_TOP_N` | `3` | recommendations logged per request |
 | `MATCH_MAX_DISTANCE_KM` | `600` | max pickup distance considered |
 | `SEED_TRUCK_COUNT` | `120` | fleet size seeded if `malumotlar` is empty |
-| `LLM_PROVIDER` | `none` | re-rank backend: `none` / `ollama` (local) / `claude` (cloud) |
+| `LLM_PROVIDER` | `ollama` | re-rank backend: `ollama` (local, default) / `none` / `claude` (cloud) |
+| `WATCH_INTERVAL_SECONDS` | `10` | how often the watcher matches externally-created requests (0 disables) |
 | `OLLAMA_HOST` / `OLLAMA_MODEL` | `localhost:11434` / `llama3.2` | local LLM server + model |
 | `ANTHROPIC_API_KEY` / `LLM_MODEL` | — / `claude-opus-4-8` | only used when `LLM_PROVIDER=claude` |
 
