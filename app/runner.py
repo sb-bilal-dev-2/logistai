@@ -64,10 +64,10 @@ def _startup_banner() -> None:
     watcher = f"every {settings.watch_interval_s}s" if settings.watch_interval_s > 0 else "disabled"
     print(f" Watcher      : {watcher} (matches externally-created requests)")
     llm_line = settings.llm_label
-    if settings.llm_provider == "ollama":
-        from app.llm import ollama_reachable
+    if settings.llm_provider in ("ollama", "vllm"):
+        from app.llm import llm_reachable
 
-        llm_line += "  [reachable]" if ollama_reachable() else "  [unreachable -> geo fallback]"
+        llm_line += "  [reachable]" if llm_reachable() else "  [unreachable -> geo fallback]"
     print(f" LLM re-rank  : {llm_line}")
     print(line)
 

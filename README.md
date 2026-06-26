@@ -100,7 +100,7 @@ Every common command is wrapped in a `Makefile` — run `make help` to list them
  ───────────────────────          ──────────────                 ─────────
   every 1–10 min                   resolve pickup → coords         avg/max latency
   create N zaproslar  ───────────► rank trucks by haversine  ───►  matched ratio
-                                   (optional Claude re-rank)       avg distance
+                                   (optional local-LLM re-rank)    avg distance
                                    write agent_takliflari + latency
 ```
 
@@ -124,20 +124,25 @@ built-in **Uzbekistan gazetteer**, then `haversine_km` measures distance.
 The agent sorts trucks closest-first, keeps those within
 `MATCH_MAX_DISTANCE_KM`, and records the top `MATCH_TOP_N`.
 
-### Optional LLM re-rank layer
+### LLM re-rank layer
 
-The geo-ranker is the deterministic core. On top of it you can optionally enable
-an LLM to re-rank the shortlist and add a one-line rationale, via `LLM_PROVIDER`:
+The geo-ranker is the deterministic core. On top of it an LLM re-ranks the
+shortlist and adds a one-line rationale, via `LLM_PROVIDER`.
+
+> **Constraint: no external ML / chatbot API.** Every provider runs **locally** —
+> no Claude, no OpenAI, no cloud inference. There is no code path that calls a
+> third-party model service.
 
 | `LLM_PROVIDER` | Backend | Network | Setup |
 |----------------|---------|---------|-------|
 | `ollama` *(default)* | **local LLM** (Ollama) | **offline** | install Ollama + pull a model (else auto-falls back to geo) |
+| `vllm` | **local vLLM** server (OpenAI-compatible `/v1`; also fits llama.cpp / LM Studio / LocalAI) | **offline** | run vLLM, set `VLLM_BASE_URL`/`VLLM_MODEL` |
 | `none` | geo-ranking only | **offline** | nothing |
-| `claude` | Anthropic Claude | cloud API | `pip install -r requirements-llm.txt` + key |
 
 Whatever the provider, the call is best-effort: if the LLM is unavailable or
 returns bad output, the agent silently keeps the geo order — it never depends on
-the LLM to function.
+the LLM to function. (`ollama` and `vllm` both talk plain HTTP via the stdlib,
+so **no extra Python dependency** is added.)
 
 **Local LLM — no API key, nothing leaves your machine.** Two ways:
 
@@ -167,6 +172,23 @@ LLM_PROVIDER=ollama OLLAMA_MODEL=qwen2.5:0.5b python -m app.runner
 > plain geo-ranking. That's fine: the agent always falls back to the correct geo
 > order if the LLM is unavailable, and the LLM's value here is the human-readable
 > *rationale*. For trustworthy re-ranking use a larger model (`llama3.2:3b`+).
+
+**Using vLLM instead** (high-throughput local serving, GPU):
+
+```bash
+# start a local vLLM OpenAI-compatible server, e.g.
+python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-0.5B-Instruct
+# point the agent at it
+LLM_PROVIDER=vllm VLLM_MODEL=Qwen/Qwen2.5-0.5B-Instruct python -m app.runner
+```
+
+**Why Ollama as the default, and why vLLM as an option?** Ollama is the easiest
+to install (one click, all OSes), manages model downloads, and runs on CPU —
+ideal for a zero-friction local demo. vLLM is the production-grade choice:
+GPU-accelerated, high-throughput batched serving. Because vLLM exposes the
+OpenAI-compatible `/v1` API, the **same `vllm` provider** also works with other
+local servers (llama.cpp, LM Studio, LocalAI) — just point `VLLM_BASE_URL` at
+them. All local; none call an external API.
 
 ## Run on Postgres (optional)
 
@@ -202,10 +224,11 @@ Copy `.env.example` to `.env` to override any default (all are optional):
 | `MATCH_TOP_N` | `3` | recommendations logged per request |
 | `MATCH_MAX_DISTANCE_KM` | `600` | max pickup distance considered |
 | `SEED_TRUCK_COUNT` | `120` | fleet size seeded if `malumotlar` is empty |
-| `LLM_PROVIDER` | `ollama` | re-rank backend: `ollama` (local, default) / `none` / `claude` (cloud) |
+| `LLM_PROVIDER` | `ollama` | re-rank backend (local only): `ollama` (default) / `vllm` / `none` |
 | `WATCH_INTERVAL_SECONDS` | `10` | how often the watcher matches externally-created requests (0 disables) |
-| `OLLAMA_HOST` / `OLLAMA_MODEL` | `localhost:11434` / `llama3.2` | local LLM server + model |
-| `ANTHROPIC_API_KEY` / `LLM_MODEL` | — / `claude-opus-4-8` | only used when `LLM_PROVIDER=claude` |
+| `OLLAMA_HOST` / `OLLAMA_MODEL` | `localhost:11434` / `qwen2.5:0.5b` | local Ollama server + model |
+| `VLLM_BASE_URL` / `VLLM_MODEL` | `localhost:8000/v1` / `local-model` | local vLLM (OpenAI-compatible) server + model |
+| `LLM_TIMEOUT_SECONDS` | `120` | per-request LLM timeout |
 
 All common commands are also wrapped in a `Makefile` — see *Shortcuts (Makefile)*
 under Quick start, or run `make help`.

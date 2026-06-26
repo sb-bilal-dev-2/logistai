@@ -26,20 +26,26 @@ def _bool(name: str, default: bool = False) -> bool:
     return val.strip().lower() in {"1", "true", "yes", "on"}
 
 
-# Re-rank backend:
-#   "none"   -> deterministic geo-ranker only (default, fully offline, no LLM)
-#   "ollama" -> a locally-installed LLM served by Ollama on localhost (offline)
-#   "claude" -> Anthropic Claude (cloud API; opt-in, needs a key)
-_VALID_PROVIDERS = {"none", "ollama", "claude"}
+# Re-rank backend — LOCAL ONLY. By project requirement, no external ML/chatbot
+# API may be used; every provider here runs on the local machine.
+#   "none"   -> deterministic geo-ranker only (fully offline, no LLM)
+#   "ollama" -> a locally-installed LLM served by Ollama on localhost (default)
+#   "vllm"   -> a local vLLM server (high-throughput, GPU). Uses vLLM's
+#               OpenAI-compatible /v1 API, so the same provider also works with
+#               other local /v1 servers (llama.cpp, LM Studio, LocalAI) if you
+#               point VLLM_BASE_URL at them. Fully offline.
+_VALID_PROVIDERS = {"none", "ollama", "vllm"}
 
 
 def _provider() -> str:
     p = os.getenv("LLM_PROVIDER", "").strip().lower()
     if p in _VALID_PROVIDERS:
         return p
-    # Backward compatibility: USE_LLM_RERANK=1 historically meant "use Claude".
-    if _bool("USE_LLM_RERANK", False):
-        return "claude"
+    if p:
+        # An unknown / disallowed provider (e.g. a cloud API) is rejected: this
+        # project must not call any external ML/chatbot API. Fall through to the
+        # local default rather than honoring it.
+        pass
     # Default ON: re-rank via a local Ollama model (offline, no external API).
     # If the Ollama server isn't running, the agent transparently falls back to
     # the deterministic geo order, so this default never breaks a run.
@@ -68,19 +74,18 @@ class Settings:
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3.2")
     llm_timeout_s: int = _int("LLM_TIMEOUT_SECONDS", 60)
 
-    # Cloud LLM via Anthropic Claude.
-    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
-    llm_model: str = os.getenv("LLM_MODEL", "claude-opus-4-8")
+    # Local vLLM server (OpenAI-compatible /v1). vLLM's default port is 8000.
+    # api_key is optional — a local vLLM ignores it unless started with one.
+    vllm_base_url: str = os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1")
+    vllm_api_key: str = os.getenv("VLLM_API_KEY", "")
+    vllm_model: str = os.getenv("VLLM_MODEL", "local-model")
 
     seed_truck_count: int = _int("SEED_TRUCK_COUNT", 120)
 
     @property
     def llm_enabled(self) -> bool:
-        if self.llm_provider == "ollama":
-            return True  # local server; failures fall back to geo-ranking
-        if self.llm_provider == "claude":
-            return bool(self.anthropic_api_key)
-        return False
+        # Only local providers exist; both are best-effort with geo fallback.
+        return self.llm_provider in ("ollama", "vllm")
 
     @property
     def llm_label(self) -> str:
@@ -89,7 +94,7 @@ class Settings:
             return "off (geo-only)"
         if self.llm_provider == "ollama":
             return f"ollama:{self.ollama_model} @ {self.ollama_host}"
-        return f"claude:{self.llm_model}"
+        return f"vllm:{self.vllm_model} @ {self.vllm_base_url}"
 
 
 settings = Settings()

@@ -30,19 +30,32 @@ def test_provider_env_selects_ollama(monkeypatch):
     assert _provider() == "ollama"
 
 
-def test_use_llm_rerank_backcompat_maps_to_claude(monkeypatch):
-    monkeypatch.delenv("LLM_PROVIDER", raising=False)
-    monkeypatch.setenv("USE_LLM_RERANK", "1")
+def test_provider_env_selects_vllm(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "vllm")
     from app.config import _provider
 
-    assert _provider() == "claude"
+    assert _provider() == "vllm"
+
+
+def test_external_provider_is_rejected(monkeypatch):
+    # No external ML/chatbot API allowed: an unknown/cloud provider falls back
+    # to the local default rather than being honored.
+    monkeypatch.setenv("LLM_PROVIDER", "claude")
+    from app.config import _provider
+
+    assert _provider() == "ollama"
+
+
+def test_only_local_providers_are_valid():
+    from app.config import _VALID_PROVIDERS
+
+    assert _VALID_PROVIDERS == {"none", "ollama", "vllm"}
 
 
 def test_llm_enabled_per_provider():
     assert Settings(llm_provider="none").llm_enabled is False
     assert Settings(llm_provider="ollama").llm_enabled is True
-    assert Settings(llm_provider="claude", anthropic_api_key="").llm_enabled is False
-    assert Settings(llm_provider="claude", anthropic_api_key="k").llm_enabled is True
+    assert Settings(llm_provider="vllm").llm_enabled is True
 
 
 # --- response parsing --------------------------------------------------------
@@ -105,3 +118,34 @@ def test_disabled_provider_skips_call(monkeypatch):
 
     monkeypatch.setattr(llm.urllib.request, "urlopen", fail)
     assert llm.llm_rerank("Toshkent", [{"mashina_id": 1}]) is None
+
+
+# --- vLLM dispatch (OpenAI-compatible, mocked HTTP) --------------------------
+def test_vllm_rerank_success(monkeypatch):
+    monkeypatch.setattr(llm, "settings", Settings(llm_provider="vllm"))
+    content = json.dumps({"order": [3, 1], "rationale": "nearest"})
+    reply = {"choices": [{"message": {"content": content}}]}
+    monkeypatch.setattr(
+        llm.urllib.request, "urlopen", lambda req, timeout=None: _FakeResp(reply)
+    )
+    out = llm.llm_rerank("Samarqand", [{"mashina_id": 1}, {"mashina_id": 3}])
+    assert out is not None and out["order"] == [3, 1]
+
+
+def test_vllm_server_down_returns_none(monkeypatch):
+    monkeypatch.setattr(llm, "settings", Settings(llm_provider="vllm"))
+
+    def boom(*a, **k):
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(llm.urllib.request, "urlopen", boom)
+    assert llm.llm_rerank("Samarqand", [{"mashina_id": 1}]) is None
+
+
+def test_vllm_malformed_response_returns_none(monkeypatch):
+    monkeypatch.setattr(llm, "settings", Settings(llm_provider="vllm"))
+    # Missing the expected choices[0].message.content shape.
+    monkeypatch.setattr(
+        llm.urllib.request, "urlopen", lambda req, timeout=None: _FakeResp({"oops": 1})
+    )
+    assert llm.llm_rerank("Samarqand", [{"mashina_id": 1}]) is None

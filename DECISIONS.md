@@ -29,12 +29,14 @@ Short rationale for the choices made in LogistAI.
   strictly additive and degrades gracefully — if the LLM is unavailable or
   returns bad output, the deterministic geo order stands, so the system never
   depends on it to function.
-- **The LLM can be fully local.** `LLM_PROVIDER=ollama` talks to an
-  [Ollama](https://ollama.com) server on `localhost` (called via stdlib HTTP —
-  zero added pip deps), so the "AI agent uses a generative model" story holds
-  with **no external API and nothing leaving the machine**. `claude` remains as
-  a cloud option for anyone who wants it. This directly demonstrates the JD's
-  "deploy AI/ML models in production" without a vendor lock-in.
+- **The LLM is always local — no external ML/chatbot API is allowed.** Two
+  providers, both on `localhost`, both called via stdlib HTTP (zero added pip
+  deps): `ollama` (default; easiest, CPU-friendly) and `vllm` (production-grade,
+  GPU, high-throughput). vLLM speaks the OpenAI-compatible `/v1` API, so the same
+  provider also drives llama.cpp / LM Studio / LocalAI via `VLLM_BASE_URL`. There
+  is no code path to a third-party model service — the "AI agent uses a generative
+  model" story holds with nothing leaving the machine, demonstrating the JD's
+  "deploy AI/ML models in production" without vendor lock-in.
 - A learned ranking model (the PyTorch/TensorFlow part of the JD) is the natural
   next step once `agent_takliflari` accumulates labelled outcomes (accepted vs.
   rejected matches). The schema already logs distance + latency per pick to feed

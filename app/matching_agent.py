@@ -3,7 +3,7 @@
 Given a freight request it:
   1. resolves the loading place (yuk_ortish_joyi) to coordinates,
   2. scores every truck by great-circle distance (closest first),
-  3. optionally lets Claude re-rank the shortlist,
+  3. optionally lets a local LLM (Ollama / vLLM) re-rank the shortlist,
   4. writes the top-N recommendations to `agent_takliflari`, recording the
      request-created time, the recommendation time, and the latency.
 
