@@ -56,8 +56,26 @@ You should see something like:
 
 ```bash
 python -m app.analytics    # print agent performance summary anytime
-python -m pytest           # run the 39 tests
+python -m pytest           # run the tests
 ```
+
+### Shortcuts (Makefile)
+
+Every common command is wrapped in a `Makefile` — run `make help` to list them:
+
+| Command | What it does |
+|---------|--------------|
+| `make install` | install core deps (offline, no AI SDK) |
+| `make migrate` | apply DB migrations (`alembic upgrade head`) |
+| `make run` | seed + live generate/match loop |
+| `make once` | single generate/match tick + analytics |
+| `make analytics` | print agent performance summary |
+| `make test` | run the test suite |
+| `make docker` | `docker compose up` — SQLite, zero config |
+| `make docker-postgres` | run the stack on Postgres |
+| `make docker-ollama` | run with a local LLM (Ollama, auto-pulls the model) |
+| `make ollama-pull` | manually (re)pull a model into the Ollama container |
+| `make docker-down` | stop + remove the docker stack |
 
 > **Tip:** requests default to a 1–10 min interval (per the task). To watch
 > activity right away, lower it in `.env`:
@@ -187,8 +205,8 @@ Copy `.env.example` to `.env` to override any default (all are optional):
 | `OLLAMA_HOST` / `OLLAMA_MODEL` | `localhost:11434` / `llama3.2` | local LLM server + model |
 | `ANTHROPIC_API_KEY` / `LLM_MODEL` | — / `claude-opus-4-8` | only used when `LLM_PROVIDER=claude` |
 
-A `Makefile` also wraps the common commands: `make once`, `make test`,
-`make docker`, `make docker-postgres`, `make docker-down`.
+All common commands are also wrapped in a `Makefile` — see *Shortcuts (Makefile)*
+under Quick start, or run `make help`.
 
 ## Project layout
 
